@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/apiResponse.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import fs from "fs";
 
 // get user details: username, email, fullName, password, avatar, coverImage
 // validate username, email, fullName, password - not empty
@@ -15,7 +16,8 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 // send response
 const registerUser = asyncHandler(async (req, res) => {
   const { username, email, fullName, password } = req.body;
-  username = username.toLowerCase();
+
+  // console.dir(req.body);
 
   if (
     [username, email, password, fullName].some((field) => field?.trim() === "")
@@ -23,20 +25,38 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "All fields are required");
   }
 
-  if (!email.includes("@")) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
     throw new ApiError(400, "Invalid email");
   }
 
-  const existedUser = await User.findOne({
-    $or: [{ username }, { email }],
-  });
-
-  if (existedUser) {
-    throw new ApiError(409, "User with email or username already exists");
+  if (password.length < 8 || password.length > 20) {
+    throw new ApiError(400, "Password must be 8-20 characters long");
   }
 
-  const avatarLocalPath = req.files?.avatar[0]?.path;
-  const coverImageLocalPath = req.files?.coverImage[0]?.path;
+  const existedUser = await User.findOne({
+    $or: [
+      {
+        username: username.toLowerCase(),
+      },
+      { email },
+    ],
+  });
+
+  // console.dir(existedUser);
+
+  // console.dir(req.files);
+
+  const avatarLocalPath = req.files?.avatar?.[0]?.path;
+  const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
+
+  // console.dir(avatarLocalPath);
+
+  if (existedUser) {
+    fs.unlinkSync(avatarLocalPath);
+    fs.unlinkSync(coverImageLocalPath);
+    throw new ApiError(409, "User with email or username already exists");
+  }
 
   if (!avatarLocalPath) {
     throw new ApiError(400, "Avatar file is required");
@@ -65,11 +85,6 @@ const registerUser = asyncHandler(async (req, res) => {
   if (!createdUser) {
     throw new ApiError(500, "Something went wrong while registering the user");
   }
-
-  console.dir(req.body);
-  console.dir(existedUser);
-  console.dir(req.files);
-  console.dir(avatarLocalPath);
 
   return res
     .status(201)
