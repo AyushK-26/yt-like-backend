@@ -11,11 +11,15 @@ connectDB()
     const PORT = process.env.PORT || 8000;
 
     app.on("error", (error) => {
-      console.log("Error: ", error);
+      console.log("App error: ", error);
     });
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Server is running at PORT: ${PORT}`);
+    });
+
+    server.on("error", (error) => {
+      console.log("Server error: ", error);
     });
   })
   .catch((error) => {
