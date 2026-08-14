@@ -2,7 +2,10 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/apiResponse.js";
 import { User } from "../models/user.model.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import {
+  uploadOnCloudinary,
+  removeFromCloudinary,
+} from "../utils/cloudinary.js";
 import fs, { access } from "fs";
 import jwt from "jsonwebtoken";
 
@@ -93,8 +96,14 @@ const registerUser = asyncHandler(async (req, res) => {
     email,
     password,
     fullName,
-    avatar: avatar.url,
-    coverImage: coverImage?.url || "",
+    avatar: {
+      url: avatar.url,
+      public_id: avatar.public_id,
+    },
+    coverImage: {
+      url: coverImage?.url || "",
+      public_id: coverImage?.public_id || "",
+    },
   });
 
   const createdUser = await User.findById(user._id).select(
@@ -252,4 +261,146 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
   }
 });
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+
+  if (oldPassword.trim() == "" || newPassword.trim() == "") {
+    throw new ApiError(400, "Both old and new passwords are required");
+  }
+
+  const user = await User.findById(req.user._id);
+
+  const isPasswordValid = await user.isPasswordCorrect(oldPassword);
+
+  if (!isPasswordValid) {
+    throw new ApiError(400, "Invalid old password");
+  }
+
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password updated successfully"));
+});
+
+const getCurrentUser = asyncHandler((req, res) => {
+  res
+    .status(200)
+    .json(new ApiResponse(200, req.user, "Current user fetched successfully"));
+});
+
+const updateAccountDetails = asyncHandler(async (req, res) => {
+  const { fullName, email } = req.body;
+
+  if (!fullName || !email) {
+    throw new ApiError(400, "All fields are required");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        fullName,
+        email,
+      },
+    },
+    { new: true }
+  ).select("-password -refreshToken");
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, user, "Account details updated successfully"));
+});
+
+const updateUserAvatar = asyncHandler(async (req, res) => {
+  const avatarLocalPath = req.file?.path;
+
+  if (!avatarLocalPath) {
+    throw new ApiError(400, "Avatar file is required");
+  }
+
+  const user = await User.findById(req.user._id).select(
+    "-password -refreshToken"
+  );
+
+  // save new avatar on cloudinary
+  const newAvatar = await uploadOnCloudinary(avatarLocalPath);
+
+  if (!newAvatar) {
+    throw new ApiError(
+      500,
+      "Something went wrong while uploading new avatar on cloudinary"
+    );
+  }
+
+  // store old avatar public id to remove old avatar from cloudinary later
+  const oldAvatarPublicId = user.avatar?.public_id;
+
+  // update user object with new avatar & save in database
+  user.avatar = {
+    url: newAvatar.url,
+    public_id: newAvatar.public_id,
+  };
+  const updatedUser = await user.save({ validateBeforeSave: false });
+
+  // remove old avatar from cloudinary after new avatar is uploaded on cloudinary and saved in database
+  await removeFromCloudinary(oldAvatarPublicId);
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, { updatedUser }, "Avatar updated successfully"));
+});
+
+const updateUserCoverImage = asyncHandler(async (req, res) => {
+  const coverImageLocalPath = req.file?.path;
+
+  if (!coverImageLocalPath) {
+    throw new ApiError(400, "Cover image is required");
+  }
+
+  const user = await User.findById(req.user._id).select(
+    "-password -refreshToken"
+  );
+
+  // save new cover image on cloudinary
+  const newCoverImage = await uploadOnCloudinary(coverImageLocalPath);
+
+  if (!newCoverImage) {
+    throw new ApiError(
+      500,
+      "Something went wrong while uploading new cover image on cloudinary"
+    );
+  }
+
+  // store old cover image public id to remove old cover image from cloudinary later
+  const oldCoverImagePublicId = user.coverImage?.public_id;
+
+  // update user object with new cover image & save in database
+  user.coverImage = {
+    url: newCoverImage.url,
+    public_id: newCoverImage.public_id,
+  };
+  const updatedUser = await user.save({ validateBeforeSave: false });
+
+  // remove old cover image from cloudinary after new cover image is uploaded on cloudinary and saved in database
+  await removeFromCloudinary(oldCoverImagePublicId);
+
+  res
+    .status(200)
+    .json(
+      new ApiResponse(200, { updatedUser }, "Cover image updated successfully")
+    );
+});
+
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  changeCurrentPassword,
+  getCurrentUser,
+  updateAccountDetails,
+  updateUserAvatar,
+  updateUserCoverImage,
+};
