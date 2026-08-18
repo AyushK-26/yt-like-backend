@@ -194,7 +194,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
 const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(req.user._id, {
-    $set: { refreshToken: undefined },
+    $unset: { refreshToken: 1 },
   });
 
   const options = {
@@ -345,7 +345,7 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
   const updatedUser = await user.save({ validateBeforeSave: false });
 
   // remove old avatar from cloudinary after new avatar is uploaded on cloudinary and saved in database
-  await removeFromCloudinary(oldAvatarPublicId);
+  await removeFromCloudinary(oldAvatarPublicId, "image");
 
   return res
     .status(200)
@@ -384,7 +384,7 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
   const updatedUser = await user.save({ validateBeforeSave: false });
 
   // remove old cover image from cloudinary after new cover image is uploaded on cloudinary and saved in database
-  await removeFromCloudinary(oldCoverImagePublicId);
+  await removeFromCloudinary(oldCoverImagePublicId, "image");
 
   return res
     .status(200)

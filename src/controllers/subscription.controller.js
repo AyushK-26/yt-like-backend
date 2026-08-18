@@ -3,17 +3,20 @@ import { Subscription } from "../models/subscription.model.js";
 import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/apiResponse.js";
+import mongoose from "mongoose";
 
 const subscribeChannel = asyncHandler(async (req, res) => {
-  const { username } = req.body;
+  const channelId = req.params?.channelId?.trim();
 
-  if (username?.trim() == "") {
-    throw new ApiError(400, "Channel name is required");
+  if (!channelId) {
+    throw new ApiError(400, "Channel ID is required");
   }
 
-  const channel = await User.findOne({
-    username: username.toLowerCase(),
-  });
+  if (!mongoose.isValidObjectId(channelId)) {
+    throw new ApiError(400, "Invalid channel ID");
+  }
+
+  const channel = await User.findById(channelId);
 
   if (!channel) {
     throw new ApiError(404, "Channel not found");
@@ -39,15 +42,17 @@ const subscribeChannel = asyncHandler(async (req, res) => {
 });
 
 const unsubscribeChannel = asyncHandler(async (req, res) => {
-  const { username } = req.body;
+  const channelId = req.params?.channelId?.trim();
 
-  if (username?.trim() == "") {
-    throw new ApiError(400, "Channel name is required");
+  if (!channelId) {
+    throw new ApiError(400, "Channel ID is required");
   }
 
-  const channel = await User.findOne({
-    username: username.toLowerCase(),
-  });
+  if (!mongoose.isValidObjectId(channelId)) {
+    throw new ApiError(400, "Invalid channel ID");
+  }
+
+  const channel = await User.findById(channelId);
 
   if (!channel) {
     throw new ApiError(404, "Channel not found");
@@ -67,4 +72,58 @@ const unsubscribeChannel = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "Unsubscribed successfully"));
 });
 
-export { subscribeChannel, unsubscribeChannel };
+const getUserChannelSubscribers = asyncHandler(async (req, res) => {
+  const channelId = req.params?.channelId?.trim();
+
+  if (!channelId) {
+    throw new ApiError(400, "Channel ID is required");
+  }
+
+  if (!mongoose.isValidObjectId(channelId)) {
+    throw new ApiError(400, "Invalid channel ID");
+  }
+
+  const userChannelSubscribers = await User.aggregate([
+    {
+      $match: {
+        _id: new mongoose.Types.ObjectId(channelId),
+      },
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "channel",
+        as: "subscribers",
+        pipeline: [
+          {
+            $project: {
+              channel: 0,
+            },
+          },
+        ],
+      },
+    },
+    {
+      $project: {
+        subscribers: 1,
+      },
+    },
+  ]);
+
+  if (!userChannelSubscribers.length) {
+    throw new ApiError(404, "Channel not found");
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        userChannelSubscribers[0].subscribers,
+        "Subscribers fetched successfully"
+      )
+    );
+});
+
+export { subscribeChannel, unsubscribeChannel, getUserChannelSubscribers };
