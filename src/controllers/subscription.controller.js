@@ -102,4 +102,32 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
     );
 });
 
-export { subscribeChannel, unsubscribeChannel, getUserChannelSubscribers };
+const getSubscribedChannels = asyncHandler(async (req, res) => {
+  const subscriberId = req.params?.subscriberId?.trim();
+
+  if (!subscriberId) {
+    throw new ApiError(400, "Subscriber ID is required");
+  }
+
+  if (!mongoose.isValidObjectId(subscriberId)) {
+    throw new ApiError(400, "Invalid subscriber ID");
+  }
+
+  const subscriber = await User.findById(subscriberId).select("_id");
+
+  if (!subscriber) {
+    throw new ApiError(404, "Subscriber not found");
+  }
+
+  const subscribedTo = await Subscription.find({
+    subscriber: subscriberId,
+  })
+    .select("channel -_id")
+    .populate("channel", "username avatar");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, subscribedTo, "Channels fetched successfully"));
+});
+
+export { subscribeChannel, unsubscribeChannel, getUserChannelSubscribers, getSubscribedChannels };

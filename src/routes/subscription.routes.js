@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  getSubscribedChannels,
   getUserChannelSubscribers,
   subscribeChannel,
   unsubscribeChannel,
@@ -13,5 +14,6 @@ router.use(verifyJWT);
 
 router.route("/:channelId").post(subscribeChannel).delete(unsubscribeChannel);
 router.route("/subscribers/:channelId").get(getUserChannelSubscribers);
+router.route("/subscribed-channels/:subscriberId").get(getSubscribedChannels);
 
 export default router;
