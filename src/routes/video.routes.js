@@ -1,14 +1,18 @@
 import { Router } from "express";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/multer.middleware.js";
-import { publishAVideo } from "../controllers/video.controller.js";
+import {
+  getVideoById,
+  publishAVideo,
+  updateVideo,
+} from "../controllers/video.controller.js";
 
 const router = Router();
 
 // Apply "verifyJWT" middleware to all routes in this file
 router.use(verifyJWT);
 
-router.route("/publish").post(
+router.route("/").post(
   upload.fields([
     {
       name: "video",
@@ -21,5 +25,10 @@ router.route("/publish").post(
   ]),
   publishAVideo
 );
+
+router
+  .route("/:videoId")
+  .get(getVideoById)
+  .patch(upload.single("thumbnail"), updateVideo);
 
 export default router;

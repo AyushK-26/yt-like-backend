@@ -1,8 +1,12 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/apiResponse.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import {
+  removeFromCloudinary,
+  uploadOnCloudinary,
+} from "../utils/cloudinary.js";
 import { Video } from "../models/video.model.js";
+import mongoose from "mongoose";
 
 const publishAVideo = asyncHandler(async (req, res) => {
   const { title, description } = req.body;
@@ -57,4 +61,91 @@ const publishAVideo = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, video, "Video published successfully"));
 });
 
-export { publishAVideo };
+const getVideoById = asyncHandler(async (req, res) => {
+  const videoId = req.params?.videoId?.trim();
+
+  if (!videoId) {
+    throw new ApiError(400, "Video ID is required");
+  }
+
+  if (!mongoose.isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid video ID");
+  }
+
+  const video = await Video.findById(videoId);
+
+  if (!video) {
+    throw new ApiError(404, "Video not found");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, video, "Video fetched successfully"));
+});
+
+const updateVideo = asyncHandler(async (req, res) => {
+  const videoId = req.params?.videoId?.trim();
+  const { title, description } = req.body;
+  const thumbnailLocalPath = req.file?.path;
+
+  const trimmedTitle = title?.trim();
+  const trimmedDescription = description?.trim();
+
+  if (!videoId) {
+    throw new ApiError(400, "Video ID is required");
+  }
+
+  if (!mongoose.isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid video ID");
+  }
+
+  const video = await Video.findById(videoId);
+
+  if (!video) {
+    throw new ApiError(404, "Video not found");
+  }
+
+  if (!trimmedTitle && !trimmedDescription && !thumbnailLocalPath) {
+    throw new ApiError(400, "Title, description or thumbnail is required");
+  }
+
+  const newThumbnail = await uploadOnCloudinary(thumbnailLocalPath);
+
+  const oldThumbnailPublicId = video.thumbnail?.public_id;
+
+  if (trimmedTitle) {
+    video.title = trimmedTitle;
+  }
+
+  if (trimmedDescription) {
+    video.description = trimmedDescription;
+  }
+
+  if (newThumbnail) {
+    video.thumbnail = {
+      url: newThumbnail.url,
+      public_id: newThumbnail.public_id,
+    };
+  }
+
+  const updatedVideo = await video.save();
+
+  if (!updatedVideo) {
+    throw new ApiError(
+      500,
+      "Something went wrong while updating video details"
+    );
+  }
+
+  if (newThumbnail) {
+    await removeFromCloudinary(oldThumbnailPublicId, "image");
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, updatedVideo, "Video details updated successfully")
+    );
+});
+
+export { publishAVideo, getVideoById, updateVideo };
