@@ -83,46 +83,22 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid channel ID");
   }
 
-  const userChannelSubscribers = await User.aggregate([
-    {
-      $match: {
-        _id: new mongoose.Types.ObjectId(channelId),
-      },
-    },
-    {
-      $lookup: {
-        from: "subscriptions",
-        localField: "_id",
-        foreignField: "channel",
-        as: "subscribers",
-        pipeline: [
-          {
-            $project: {
-              channel: 0,
-            },
-          },
-        ],
-      },
-    },
-    {
-      $project: {
-        subscribers: 1,
-      },
-    },
-  ]);
+  const channel = await User.findById(channelId).select("_id");
 
-  if (!userChannelSubscribers.length) {
+  if (!channel) {
     throw new ApiError(404, "Channel not found");
   }
+
+  const subscribers = await Subscription.find({
+    channel: channelId,
+  })
+    .select("subscriber -_id")
+    .populate("subscriber", "username avatar");
 
   return res
     .status(200)
     .json(
-      new ApiResponse(
-        200,
-        userChannelSubscribers[0].subscribers,
-        "Subscribers fetched successfully"
-      )
+      new ApiResponse(200, subscribers, "Subscribers fetched successfully")
     );
 });
 
