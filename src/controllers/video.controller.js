@@ -7,6 +7,7 @@ import {
 } from "../utils/cloudinary.js";
 import { Video } from "../models/video.model.js";
 import mongoose from "mongoose";
+import fs from "fs";
 
 const publishAVideo = asyncHandler(async (req, res) => {
   const { title, description } = req.body;
@@ -91,6 +92,79 @@ const updateVideo = asyncHandler(async (req, res) => {
   const trimmedTitle = title?.trim();
   const trimmedDescription = description?.trim();
 
+  try {
+    if (!videoId) {
+      throw new ApiError(400, "Video ID is required");
+    }
+
+    if (!mongoose.isValidObjectId(videoId)) {
+      throw new ApiError(400, "Invalid video ID");
+    }
+
+    const video = await Video.findById(videoId);
+
+    if (!video) {
+      throw new ApiError(404, "Video not found");
+    }
+
+    // console.log(typeof video.owner, video.owner);
+    // console.log(typeof req.user._id, req.user._id);
+
+    if (!video.owner.equals(req.user._id)) {
+      throw new ApiError(403, "Video is not owned by the logged in user");
+    }
+
+    if (!trimmedTitle && !trimmedDescription && !thumbnailLocalPath) {
+      throw new ApiError(400, "Title, description or thumbnail is required");
+    }
+
+    const newThumbnail = await uploadOnCloudinary(thumbnailLocalPath);
+
+    const oldThumbnailPublicId = video.thumbnail?.public_id;
+
+    if (trimmedTitle) {
+      video.title = trimmedTitle;
+    }
+
+    if (trimmedDescription) {
+      video.description = trimmedDescription;
+    }
+
+    if (newThumbnail) {
+      video.thumbnail = {
+        url: newThumbnail.url,
+        public_id: newThumbnail.public_id,
+      };
+    }
+
+    const updatedVideo = await video.save();
+
+    if (!updatedVideo) {
+      throw new ApiError(
+        500,
+        "Something went wrong while updating video details"
+      );
+    }
+
+    if (newThumbnail) {
+      await removeFromCloudinary(oldThumbnailPublicId, "image");
+    }
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, updatedVideo, "Video details updated successfully")
+      );
+  } finally {
+    if (thumbnailLocalPath && fs.existsSync(thumbnailLocalPath)) {
+      fs.unlinkSync(thumbnailLocalPath);
+    }
+  }
+});
+
+const deleteVideo = asyncHandler(async (req, res) => {
+  const videoId = req.params?.videoId?.trim();
+
   if (!videoId) {
     throw new ApiError(400, "Video ID is required");
   }
@@ -105,50 +179,21 @@ const updateVideo = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Video not found");
   }
 
-  if (!trimmedTitle && !trimmedDescription && !thumbnailLocalPath) {
-    throw new ApiError(400, "Title, description or thumbnail is required");
+  if (!video.owner.equals(req.user._id)) {
+    throw new ApiError(403, "Video is not owned by the logged in user");
   }
 
-  const newThumbnail = await uploadOnCloudinary(thumbnailLocalPath);
+  await video.deleteOne();
 
-  const oldThumbnailPublicId = video.thumbnail?.public_id;
-
-  if (trimmedTitle) {
-    video.title = trimmedTitle;
-  }
-
-  if (trimmedDescription) {
-    video.description = trimmedDescription;
-  }
-
-  if (newThumbnail) {
-    video.thumbnail = {
-      url: newThumbnail.url,
-      public_id: newThumbnail.public_id,
-    };
-  }
-
-  const updatedVideo = await video.save();
-
-  if (!updatedVideo) {
-    throw new ApiError(
-      500,
-      "Something went wrong while updating video details"
-    );
-  }
-
-  if (newThumbnail) {
-    await removeFromCloudinary(oldThumbnailPublicId, "image");
-  }
+  await removeFromCloudinary(video.videoFile?.public_id, "video");
+  await removeFromCloudinary(video.thumbnail?.public_id, "image");
 
   return res
     .status(200)
-    .json(
-      new ApiResponse(200, updatedVideo, "Video details updated successfully")
-    );
+    .json(new ApiResponse(200, {}, "Video deleted successfully"));
 });
 
-const deleteVideo = asyncHandler(async (req, res) => {
+const togglePublishStatus = asyncHandler(async (req, res) => {
   const videoId = req.params?.videoId?.trim();
 
   if (!videoId) {
@@ -159,18 +204,42 @@ const deleteVideo = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid video ID");
   }
 
-  const video = await Video.findByIdAndDelete(videoId);
+  const video = await Video.findById(videoId);
 
   if (!video) {
     throw new ApiError(404, "Video not found");
   }
 
-  await removeFromCloudinary(video.videoFile?.public_id, "video");
-  await removeFromCloudinary(video.thumbnail?.public_id, "image");
+  if (!video.owner.equals(req.user._id)) {
+    throw new ApiError(403, "Video is not owned by the logged in user");
+  }
 
-  return res
-    .status(200)
-    .json(new ApiResponse(200, {}, "Video deleted successfully"));
+  video.isPublished = !video.isPublished;
+
+  const toggledVideo = await video.save();
+
+  if (!toggledVideo) {
+    throw new ApiError(
+      500,
+      "Something went wrong while changing publish status"
+    );
+  }
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        isPublished: video.isPublished,
+      },
+      "Publish status toggled successfully"
+    )
+  );
 });
 
-export { publishAVideo, getVideoById, updateVideo, deleteVideo };
+export {
+  publishAVideo,
+  getVideoById,
+  updateVideo,
+  deleteVideo,
+  togglePublishStatus,
+};
